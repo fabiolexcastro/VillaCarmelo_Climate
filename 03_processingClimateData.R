@@ -21,7 +21,7 @@ calc_difference <- function(vr, gc, yr){
   cat('\tFuture')
   fr <- paste0('../datos/raster/climate/ipcc/rcp85/server/', yr, '/', gc) 
   fr <- list.files(fr, full.names = T) 
-  vr <- paste0('prec_', 1:12, '$')
+  vr <- paste0(vr, '_', 1:12, '$')
   fr <- grep(paste0(vr, collapse = '|'), fr, value = T)
   fr <- mixedsort(fr)
   fr <- stack(fr)
@@ -34,8 +34,8 @@ calc_difference <- function(vr, gc, yr){
   pr <- df / cr * 100
   
   cat('\tTo write')
-  Map('writeRaster', x = unstack(df), filename = paste0('../datos/output/climate/difference/', yr, '/', gc, '_', vr, '_', 1:12, '_dfr.tif'), overwrite = TRUE)
-  Map('writeRaster', x = unstack(pr), filename = paste0('../datos/output/climate/difference/', yr, '/', gc, '_', vr, '_', 1:12, '_prc.tif'), overwrite = TRUE)
+  Map('writeRaster', x = unstack(df), filename = paste0('../datos/output/climate/difference/', yr, '/', gc, '_', gsub('\\$', '', vr), '_dfr.tif'), overwrite = TRUE)
+  Map('writeRaster', x = unstack(pr), filename = paste0('../datos/output/climate/difference/', yr, '/', gc, '_', gsub('\\$', '', vr), '_prc.tif'), overwrite = TRUE)
   
 }
 
@@ -75,7 +75,7 @@ foreach(i = 1:length(gcm), .verbose = TRUE) %dopar% {
 stopCluster(cl)
 
 # 2050s
-cl <- makeCluster(6)
+cl <- makeCluster(8)
 registerDoSNOW(cl)
 
 foreach(i = 1:length(gcm), .verbose = TRUE) %dopar% {
@@ -92,5 +92,33 @@ foreach(i = 1:length(gcm), .verbose = TRUE) %dopar% {
 }
 
 stopCluster(cl)
+
+
+# Calculating the averages ------------------------------------------------
+fls <- list.files('../datos/output/climate/difference/2040_2069', full.names = TRUE, pattern = '.tif$') %>% 
+  grep('tmax_', ., value = TRUE) %>% 
+  grep('dfr.tif', ., value = TRUE) %>% 
+  mixedsort()
+rst <- lapply(1:33, function(k){
+  
+  cat(k)
+  fle <- grep(paste0(gcm[k], '_t'), fls, value = T)
+  rst <- stack(fle)
+  avg <- mean(rst)
+  cat('Done')
+  return(avg)
+  
+})
+
+avg <- mean(stack(rst))
+avg <- avg / 10
+avg <- raster::crop(avg, shp) %>% raster::mask(., shp)
+
+shp@data$gid <- 1:2
+zne <- rasterize(shp, avg[[1]], field = 'gid')
+znl <- raster::zonal(avg, zne, fun = 'mean')
+znl <- as.data.frame(znl) %>% mutate(mean = round(mean, 2))
+
+writeRaster(avg, '../datos/output/climate/difference/tmax_2040_2069.tif', overwrite = TRUE)
 
 
